@@ -1,0 +1,4 @@
+Check: 0 (wut_id of the main thread is should be 0)
+Check: -1 (wut_yield should return -1 becase there no thread in queue)
+Check: 1 (wut_id of the first created thread shoule be 1)
+Check: 2 (wut_id of the second created thread shoule be 1)

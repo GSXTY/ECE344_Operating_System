@@ -136,6 +136,7 @@ void wut_init() {
   thread_0->status_ = -1;
   thread_0->block_ = 0;
   thread_0->enable_ = 1;
+  thread_0->stack_ = NULL;
   thread_0->thread_in_q_ = NULL;
   ucontext_t* ucontext = malloc(sizeof(ucontext_t));
   getcontext(ucontext);
@@ -231,8 +232,19 @@ int wut_cancel(int id) {
   if(cancel_thread == NULL || cancel_thread->status_ != -1) {
     return -1;
   }
-
+  
   cancel_thread->status_ = 128;
+
+  //if the thread is being joined, the thread joinning to this should be move to end of queue
+  if (cancel_thread->join_from_ != -1) {
+    THREAD* blocking_thread_in_q = malloc(sizeof(THREAD));
+    blocking_thread_in_q->thread_id_ = cancel_thread->join_from_;
+    TAILQ_INSERT_TAIL(&Q_head, blocking_thread_in_q, pointers);
+    TCB_ARRAY[cancel_thread->join_from_]->join_ = 0;
+    TCB_ARRAY[cancel_thread->join_from_]->join_to_ = -1;
+    TCB_ARRAY[cancel_thread->join_from_]->thread_in_q_ = blocking_thread_in_q;
+    TCB_ARRAY[cancel_thread->join_from_]->block_ = 0;
+  }
 
   //if the thread is joining to other
   if (cancel_thread->block_ == 1) {
@@ -249,7 +261,6 @@ int wut_cancel(int id) {
     free(cancel_thread->thread_in_q_);
     cancel_thread->thread_in_q_ = NULL;
   }
-  
   return 0;
 }
 
@@ -258,7 +269,7 @@ int wut_cancel(int id) {
   put the block thread back to queue
 */
 int wut_join(int id) {
-  if (id < 0 || CURRENT_RUNNING_THREAD_ID == id || id > MAX_THREAD_NUM) {
+  if (id < 0 || CURRENT_RUNNING_THREAD_ID == id || id >= THREAD_NUM) {
     return -1;
   }
   if (TCB_ARRAY[id] == NULL || TCB_ARRAY[id]->status_ != - 1 || TCB_ARRAY[id]->join_ == 1) {
@@ -320,12 +331,11 @@ int wut_yield() {
 */
 void wut_exit(int status) {
   TCB* current_thread = TCB_ARRAY[CURRENT_RUNNING_THREAD_ID];
-  status &= 0xFF;
   
   if (current_thread->status_ == -1) {
+    status &= 0xFF;
     current_thread->status_ = status;
   }
-
   //if the thread is being joined, the joinning thread will be put back to queue 
   if (current_thread->join_ == 1) {
     current_thread->join_ = 0;
@@ -345,5 +355,7 @@ void wut_exit(int status) {
     setcontext(next_thread->ucontext_);
   } else {
     clear_global();
+    exit(0);
   }
+
 }

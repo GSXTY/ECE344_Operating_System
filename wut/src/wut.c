@@ -104,13 +104,14 @@ void clear_global() {
       }
       if (thread->stack_) {
         delete_stack(thread->stack_);
+        thread->stack_ = NULL;
       }
       if (thread->ucontext_) {
         free(thread->ucontext_);
         thread->ucontext_ = NULL;
       }
     }
-    free(TCB_ARRAY[i]);
+    free(thread);
     TCB_ARRAY[i] = NULL;
   }
   free(TCB_ARRAY);
@@ -229,11 +230,7 @@ int wut_cancel(int id) {
   }
   
   TCB* cancel_thread = TCB_ARRAY[id];
-  //printf("id = %d, status = %d, join = %d\n", cancel_thread->id_,cancel_thread->status_,cancel_thread->join_);
   if(cancel_thread == NULL || cancel_thread->status_ != -1) {
-    if(cancel_thread->status_ != -1) {
-      //printf("status = %d\n", cancel_thread->status_);
-    }
     return -1;
   }
   
@@ -242,13 +239,18 @@ int wut_cancel(int id) {
   //if the thread is being joined, the thread joinning to this should be move to end of queue
   if (cancel_thread->join_from_ != -1) {
     THREAD* blocking_thread_in_q = malloc(sizeof(THREAD));
+
     blocking_thread_in_q->thread_id_ = cancel_thread->join_from_;
     TAILQ_INSERT_TAIL(&Q_head, blocking_thread_in_q, pointers);
     TCB_ARRAY[cancel_thread->join_from_]->join_ = 0;
     TCB_ARRAY[cancel_thread->join_from_]->join_to_ = -1;
+    //remove the old, put the new one
+    if (TCB_ARRAY[cancel_thread->join_from_]->thread_in_q_) {
+      free(TCB_ARRAY[cancel_thread->join_from_]->thread_in_q_);
+      TCB_ARRAY[cancel_thread->join_from_]->thread_in_q_ = NULL;
+    }
     TCB_ARRAY[cancel_thread->join_from_]->thread_in_q_ = blocking_thread_in_q;
     TCB_ARRAY[cancel_thread->join_from_]->block_ = 0;
-    //printf("insert to queue\n");
   }
 
   //if the thread is joining to other
@@ -259,25 +261,13 @@ int wut_cancel(int id) {
     the_thread->join_ = 0;
   } else {
     //remove from queue
-    //printf("delete the thread %d\n", id);
     delete_stack(cancel_thread->stack_);
     free(cancel_thread->ucontext_ );
     cancel_thread->ucontext_ = NULL;
-    THREAD* c = NULL;
-    TAILQ_FOREACH(c, &Q_head, pointers){
-      if(c->thread_id_ == id){
-        break;
-      }
-    }
-    if(c) {
-      TAILQ_REMOVE(&Q_head, c, pointers);
-      free(cancel_thread->thread_in_q_);
-    }
-    
+    TAILQ_REMOVE(&Q_head, cancel_thread->thread_in_q_, pointers);
+    free(cancel_thread->thread_in_q_);
     cancel_thread->thread_in_q_ = NULL;
   }
-
-  //printf("should return 0\n");
   return 0;
 }
 
@@ -286,13 +276,10 @@ int wut_cancel(int id) {
   put the block thread back to queue
 */
 int wut_join(int id) {
-  //("join id = %d\n", id);
   if (id < 0 || CURRENT_RUNNING_THREAD_ID == id || id >= THREAD_NUM) {
-    //printf("invalid id\n");
     return -1;
   }
   if (TCB_ARRAY[id] == NULL || TCB_ARRAY[id]->status_ != - 1 || TCB_ARRAY[id]->join_ == 1) {
-    //printf("invalid status\n");
     return TCB_ARRAY[id]->status_;
   }
 
@@ -311,10 +298,8 @@ int wut_join(int id) {
   TAILQ_REMOVE(&Q_head, next_thread_in_q, pointers);
   TCB* next_thread = TCB_ARRAY[next_thread_in_q->thread_id_];
   CURRENT_RUNNING_THREAD_ID = next_thread->id_;
-  //("move next theread %d\n", CURRENT_RUNNING_THREAD_ID);
   swapcontext(current_thread->ucontext_, next_thread->ucontext_);
 
-  //printf("back to join\n");
   join_thread->enable_ = 1;
   return join_thread->status_;
 }
@@ -330,11 +315,17 @@ int wut_yield() {
 
   //move the current thread to the end of queue
   TCB* current_thread = TCB_ARRAY[CURRENT_RUNNING_THREAD_ID];
-  //("current is %d\n", CURRENT_RUNNING_THREAD_ID);
 
   THREAD* current_thread_in_q = malloc(sizeof(THREAD));
   int current_thread_id = current_thread->id_;
+
+  //remove the old, put the new one
+  if(TCB_ARRAY[current_thread_id]->thread_in_q_) {
+    free(TCB_ARRAY[current_thread_id]->thread_in_q_);
+    TCB_ARRAY[current_thread_id]->thread_in_q_ = NULL;
+  }
   current_thread_in_q->thread_id_ = current_thread_id;
+  TCB_ARRAY[current_thread_id]->thread_in_q_ = current_thread_in_q;
   TAILQ_INSERT_TAIL(&Q_head, current_thread_in_q, pointers);
 
   //start running next thread
@@ -343,7 +334,6 @@ int wut_yield() {
   CURRENT_RUNNING_THREAD_ID = next_thread_in_q->thread_id_;
 
   TCB* next_thread = TCB_ARRAY[next_thread_in_q->thread_id_];
-  //printf("yield, now is %d\n", CURRENT_RUNNING_THREAD_ID);
 
   swapcontext(current_thread->ucontext_, next_thread->ucontext_);
   
@@ -355,7 +345,6 @@ int wut_yield() {
 */
 void wut_exit(int status) {
   TCB* current_thread = TCB_ARRAY[CURRENT_RUNNING_THREAD_ID];
-  //("current thread is %d, status = %d\n", current_thread->id_, current_thread->status_);
   if (current_thread->status_ == -1) {
     status &= 0xFF;
     current_thread->status_ = status;
@@ -366,7 +355,14 @@ void wut_exit(int status) {
     TCB* current_blocked_thread = TCB_ARRAY[current_thread->join_from_];
     current_thread->join_from_ = -1;
     THREAD* current_blocked_thread_in_q = malloc(sizeof(THREAD));
+
+    //remove the old, create a new one (not necessary)
+    if (TCB_ARRAY[current_blocked_thread->id_]->thread_in_q_) {
+      free(TCB_ARRAY[current_blocked_thread->id_]->thread_in_q_);
+      TCB_ARRAY[current_blocked_thread->id_]->thread_in_q_ = NULL;
+    }
     current_blocked_thread_in_q->thread_id_ = current_blocked_thread->id_;
+    TCB_ARRAY[current_blocked_thread->id_]->thread_in_q_ = current_blocked_thread_in_q;
     TAILQ_INSERT_TAIL(&Q_head, current_blocked_thread_in_q, pointers);
   }
   
@@ -376,12 +372,9 @@ void wut_exit(int status) {
     TAILQ_REMOVE(&Q_head, next_thread_in_q, pointers);
     CURRENT_RUNNING_THREAD_ID = next_thread_in_q->thread_id_;
     TCB* next_thread = TCB_ARRAY[next_thread_in_q->thread_id_];
-    //("next athread = %d\n", CURRENT_RUNNING_THREAD_ID);
-    
     setcontext(next_thread->ucontext_);
   } else {
     clear_global();
     exit(0);
   }
-
 }

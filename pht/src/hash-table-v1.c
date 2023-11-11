@@ -1,9 +1,13 @@
 #include "hash-table-base.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
+
+//adding pthead lib
+#include <pthread.h>
 
 struct list_entry {
 	const char *key;
@@ -19,6 +23,9 @@ struct hash_table_entry {
 
 struct hash_table_v1 {
 	struct hash_table_entry entries[HASH_TABLE_CAPACITY];
+
+	//add mutex for hash_table
+	pthread_mutex_t mutex;
 };
 
 struct hash_table_v1 *hash_table_v1_create()
@@ -29,6 +36,8 @@ struct hash_table_v1 *hash_table_v1_create()
 		struct hash_table_entry *entry = &hash_table->entries[i];
 		SLIST_INIT(&entry->list_head);
 	}
+	//init for mutex
+	pthread_mutex_init(&hash_table->mutex, NULL);
 	return hash_table;
 }
 
@@ -69,20 +78,35 @@ void hash_table_v1_add_entry(struct hash_table_v1 *hash_table,
                              const char *key,
                              uint32_t value)
 {
+	//set the mutex on
+	pthread_mutex_lock(&(hash_table->mutex));
+
 	struct hash_table_entry *hash_table_entry = get_hash_table_entry(hash_table, key);
+	if (!hash_table_entry) {
+		printf("the hash table ent is null\n");
+	}
+
 	struct list_head *list_head = &hash_table_entry->list_head;
+	// if (!list_head) {
+	// 	printf("the hash table list head is null\n");
+	// }
+
 	struct list_entry *list_entry = get_list_entry(list_head, key);
 
 	/* Update the value if it already exists */
-	if (list_entry != NULL) {
-		list_entry->value = value;
-		return;
-	}
+	// if (list_entry != NULL) {
+	// 	list_entry->value = value;
+	// 	return;
+	// }
 
+	//else we create a new ent and set the val
 	list_entry = calloc(1, sizeof(struct list_entry));
 	list_entry->key = key;
 	list_entry->value = value;
 	SLIST_INSERT_HEAD(list_head, list_entry, pointers);
+
+	//set the mutex off
+	pthread_mutex_unlock(&(hash_table->mutex));
 }
 
 uint32_t hash_table_v1_get_value(struct hash_table_v1 *hash_table,
@@ -107,5 +131,8 @@ void hash_table_v1_destroy(struct hash_table_v1 *hash_table)
 			free(list_entry);
 		}
 	}
+
+	//destory the mutex
+	pthread_mutex_destroy(&(hash_table->mutex));
 	free(hash_table);
 }

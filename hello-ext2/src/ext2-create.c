@@ -209,8 +209,6 @@ void write_superblock(int fd) {
 
 	struct ext2_superblock superblock = {0};
 
-	/* These are intentionally incorrectly set as 0, you should set them
-		correctly and delete this comment */
 	superblock.s_inodes_count      = NUM_INODES;
 	superblock.s_blocks_count      = NUM_BLOCKS;
 	superblock.s_r_blocks_count    = 0;
@@ -237,8 +235,6 @@ void write_superblock(int fd) {
 	superblock.s_def_resuid        = 0; /* root */
 	superblock.s_def_resgid        = 0; /* root */
 
-	/* You can leave everything below this line the same, delete this
-		comment when you're done the lab */
 	superblock.s_uuid[0] = 0x5A;
 	superblock.s_uuid[1] = 0x1E;
 	superblock.s_uuid[2] = 0xAB;
@@ -272,8 +268,6 @@ void write_block_group_descriptor_table(int fd) {
 
 	struct ext2_block_group_descriptor block_group_descriptor = {0};
 
-	/* These are intentionally incorrectly set as 0, you should set them
-		correctly and delete this comment */
 	block_group_descriptor.bg_block_bitmap = BLOCK_BITMAP_BLOCKNO;
 	block_group_descriptor.bg_inode_bitmap = INODE_BITMAP_BLOCKNO;
 	block_group_descriptor.bg_inode_table = INODE_TABLE_BLOCKNO;
@@ -288,17 +282,14 @@ void write_block_group_descriptor_table(int fd) {
 }
 
 void write_block_bitmap(int fd) {
-	/* This is all you */
-	u8 block_bitmap[NUM_BLOCKS];
+	u8 block_bitmap[BLOCK_SIZE];
 	memset(block_bitmap, 0, sizeof(block_bitmap)); 
 
-	//all used blocks
 	for (int i = 0; i < LAST_BLOCK; ++ i) {
 		block_bitmap[i / 8] |= (1 << (i % 8));
 	}
 
-	//block 1024 to 8192
-	for (int i = 1023; i < 8192; ++ i) {
+	for (int i = 1023; i < BLOCK_SIZE * 8; ++ i) {
 		block_bitmap[i / 8] |= (1 << (i % 8));
 	}
 
@@ -312,7 +303,6 @@ void write_block_bitmap(int fd) {
 }
 
 void write_inode_bitmap(int fd) {
-	/* This is all you */
 	u8 inode_bitmap[BLOCK_SIZE]; 
 	memset(inode_bitmap, 0, sizeof(inode_bitmap)); 
 
@@ -320,7 +310,7 @@ void write_inode_bitmap(int fd) {
 		inode_bitmap[i / 8] |= (1 << (i % 8));
 	}
 
-	for (int i = 128; i < 8192; ++ i) {
+	for (int i = 128; i < BLOCK_SIZE * 8; ++ i) {
 		inode_bitmap[i / 8] |= (1 << (i % 8));
 	}
 
@@ -371,8 +361,6 @@ void write_inode_table(int fd) {
 	lost_and_found_inode.i_block[0] = LOST_AND_FOUND_DIR_BLOCKNO;
 	write_inode(fd, LOST_AND_FOUND_INO, &lost_and_found_inode);
 
-	/* You should add your 3 other inodes in this function and delete this
-		comment */
 	struct ext2_inode root_inode = {0};
 	root_inode.i_mode = EXT2_S_IFDIR
 										| EXT2_S_IRUSR
@@ -413,10 +401,10 @@ void write_inode_table(int fd) {
 	struct ext2_inode hello_inode = {0};
 	memset(&hello_inode, 0, sizeof(struct ext2_inode)); 
 	hello_inode.i_mode = EXT2_S_IFLNK 
-										| EXT2_S_IRUSR 
-										| EXT2_S_IWUSR
-										| EXT2_S_IRGRP 
-										| EXT2_S_IROTH;
+										 | EXT2_S_IRUSR 
+										 | EXT2_S_IWUSR
+										 | EXT2_S_IRGRP 
+										 | EXT2_S_IROTH;
 	hello_inode.i_uid = 1000; 
 	hello_inode.i_gid = 1000; 
 	const char* hello_target = "hello-world";
@@ -432,13 +420,11 @@ void write_inode_table(int fd) {
 }
 
 void write_root_dir_block(int fd) {
-  // 定位到根目录块
   if (lseek(fd, BLOCK_OFFSET(ROOT_DIR_BLOCKNO), SEEK_SET) == -1) {
-    perror("lseek error in write_root_dir_block");
+    perror("lseek error");
     exit(EXIT_FAILURE);
   }
 
-  // "." 目录项
   struct ext2_dir_entry dot_entry;
   memset(&dot_entry, 0, sizeof(dot_entry));
   dot_entry.inode = EXT2_ROOT_INO; 
@@ -447,11 +433,10 @@ void write_root_dir_block(int fd) {
   dot_entry.rec_len = 12; 
 
   if (write(fd, &dot_entry, dot_entry.rec_len) != dot_entry.rec_len) {
-    perror("write error in write_root_dir_block");
+    perror("write error");
     exit(EXIT_FAILURE);
   }
 
-  // ".." 目录项
   struct ext2_dir_entry dotdot_entry;
   memset(&dotdot_entry, 0, sizeof(dotdot_entry));
   dotdot_entry.inode = EXT2_ROOT_INO; 
@@ -460,11 +445,10 @@ void write_root_dir_block(int fd) {
   dotdot_entry.rec_len = 12;
 
   if (write(fd, &dotdot_entry, dotdot_entry.rec_len) != dotdot_entry.rec_len) {
-    perror("write error in write_root_dir_block");
+    perror("write error");
     exit(EXIT_FAILURE);
   }
 
-  // "lost+found" 目录项
   struct ext2_dir_entry lost_and_found_entry;
   memset(&lost_and_found_entry, 0, sizeof(lost_and_found_entry));
   lost_and_found_entry.inode = LOST_AND_FOUND_INO;
@@ -473,11 +457,10 @@ void write_root_dir_block(int fd) {
   lost_and_found_entry.rec_len = 12 + ((lost_and_found_entry.name_len + 3) / 4) * 4;
 
   if (write(fd, &lost_and_found_entry, lost_and_found_entry.rec_len) != lost_and_found_entry.rec_len) {
-    perror("write error in write_root_dir_block");
+    perror("write error");
     exit(EXIT_FAILURE);
   }
 
-  // "hello-world" 文件的目录项
   struct ext2_dir_entry hello_world_entry;
   memset(&hello_world_entry, 0, sizeof(hello_world_entry));
   hello_world_entry.inode = HELLO_WORLD_INO;
@@ -486,20 +469,20 @@ void write_root_dir_block(int fd) {
   hello_world_entry.rec_len = 12 + ((hello_world_entry.name_len + 3) / 4) * 4;
 
   if (write(fd, &hello_world_entry, hello_world_entry.rec_len) != hello_world_entry.rec_len) {
-    perror("write error in write_root_dir_block");
+    perror("write error");
     exit(EXIT_FAILURE);
   }
 
-  // "hello" 符号链接的目录项
   struct ext2_dir_entry hello_entry;
   memset(&hello_entry, 0, sizeof(hello_entry));
   hello_entry.inode = HELLO_INO;
   strncpy((char*)hello_entry.name, "hello", EXT2_NAME_LEN);
   hello_entry.name_len = strlen("hello");
-  hello_entry.rec_len = BLOCK_SIZE - (dot_entry.rec_len + dotdot_entry.rec_len + lost_and_found_entry.rec_len + hello_world_entry.rec_len);
+  hello_entry.rec_len = BLOCK_SIZE - (dot_entry.rec_len + dotdot_entry.rec_len + 
+												lost_and_found_entry.rec_len + hello_world_entry.rec_len);
 
   if (write(fd, &hello_entry, hello_entry.rec_len) != hello_entry.rec_len) {
-    perror("write error in write_root_dir_block");
+    perror("write error");
     exit(EXIT_FAILURE);
   }
 }
@@ -529,17 +512,16 @@ void write_lost_and_found_dir_block(int fd) {
 }
 
 void write_hello_world_file_block(int fd) {
-	/* This is all you */
 	const char *file_content = "Hello world\n";
 	ssize_t len = strlen(file_content); 
 
-	if (lseek(fd, BLOCK_OFFSET(HELLO_WORLD_FILE_BLOCKNO), SEEK_SET) == (off_t)-1) {
-		perror("lseek error in write_hello_world_file_block");
+	if (lseek(fd, BLOCK_OFFSET(HELLO_WORLD_FILE_BLOCKNO), SEEK_SET) == -1) {
+		perror("lseek error");
 		exit(EXIT_FAILURE);
 	}
 
 	if (write(fd, file_content, (size_t)len) != len) { 
-		perror("write error in write_hello_world_file_block");
+		perror("write error");
 		exit(EXIT_FAILURE);
 	}
 }
